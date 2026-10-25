@@ -136,4 +136,4 @@ Mahdi Haidar
 
 ## License
 
-No license has been selected for this repository. Until a license is added, the project remains under default copyright terms; public availability does not grant permission to reuse it.
+No license has been selected for this repository.

@@ -1,123 +1,139 @@
-ChessPlatform
-ChessPlatform is a full-stack online chess platform for playing live games, solving puzzles, tracking ratings, joining tournaments, and analyzing positions with Stockfish.
-Features
-- Account registration, email verification, login, password recovery, and profile management
-- Friend requests, player search, blocking, and direct game challenges
-- Matchmaking, live two-player games, clocks, chat, draw offers, resignations, and rematches
-- Spectator consent and live game viewing
-- Puzzle solving, attempt history, and puzzle ratings
-- Player ratings, rating history, and leaderboards
-- Tournament registration, pairings, standings, match results, and lifecycle management
-- Stockfish-powered position analysis
-- Browser automation with Playwright
-Architecture
-The browser loads the frontend and sends HTTP and SignalR requests to the public API Gateway. The Gateway routes requests to the backend services over the internal Docker network.
+# ChessPlatform — Online Chess Microservices Platform
 
-flowchart LR
-    Browser --> Frontend["React SPA<br/>Nginx or Vite"]
-    Browser --> Gateway[".NET YARP Gateway<br/>HTTP and SignalR"]
-    Gateway --> Identity["Identity"]
-    Gateway --> Game["Game"]
-    Gateway --> Realtime["Realtime"]
-    Gateway --> Puzzle["Puzzle"]
-    Gateway --> Rating["Rating"]
-    Gateway --> Analysis["Analysis"]
-    Gateway --> Tournament["Tournament"]
+A full-stack online chess platform built with .NET, React, PostgreSQL, Redis, Kafka, SignalR, Stockfish, and Docker.
 
-    Identity --> Postgres["PostgreSQL"]
-    Game --> Postgres
-    Puzzle --> Postgres
-    Rating --> Postgres
-    Tournament --> Postgres
+## Project Overview
 
-    Game --> Kafka["Apache Kafka"]
-    Puzzle --> Kafka
-    Tournament --> Kafka
-    Kafka --> Rating
-    Kafka --> Realtime
-    Kafka --> Tournament
+ChessPlatform is an online chess application for playing live games, challenging friends, solving puzzles, tracking player ratings, joining tournaments, and analyzing positions.
 
-    Realtime --> Redis["Redis<br/>SignalR backplane"]
+The backend uses a microservices architecture to separate responsibilities such as identity, game rules, realtime communication, puzzles, ratings, analysis, and tournaments. The React frontend communicates with the backend through a YARP API Gateway.
 
-    Services
-    
-    | Service | Responsibility |
-|---|---|
-| **Gateway** | Public entry point, reverse proxy, authentication policies, CORS, and rate limiting |
-| **Identity** | Accounts, authentication, email verification, profiles, and social features |
-| **Game** | Authoritative game state, moves, clocks, matchmaking, challenges, rematches, and player statistics |
-| **Realtime** | SignalR game and tournament communication, presence, and event broadcasts |
-| **Puzzle** | Puzzle retrieval, move validation, attempts, and player puzzle history |
-| **Rating** | Player ratings, rating history, leaderboards, and event-driven rating updates |
-| **Analysis** | Position evaluation using Stockfish |
-| **Tournament** | Tournament registration, pairings, standings, results, and game provisioning |
-| **Puzzle.Importer** | One-off utility for importing validated compressed Lichess puzzle data |
+The project is designed to demonstrate full-stack development, service boundaries, real-time communication, event-driven workflows, authentication, containerization, and integration testing.
 
-The backend uses a layered structure: API, Application, Domain, and Infrastructure projects. The Gateway is in backend/src/Gateway/; service projects are under backend/src/Services/.
+## Architecture
 
-Technology
+The application consists of a React single-page frontend, a public API Gateway, backend services, and supporting data and messaging infrastructure.
 
-Backend: .NET 10, ASP.NET Core, Entity Framework Core, PostgreSQL, Apache Kafka, Redis, YARP, SignalR, Stockfish
-Frontend: React 19, TypeScript, Vite, Tailwind CSS 4, TanStack Router, TanStack Query, Three.js
-Automation: Playwright Test
-Run locally with Docker
-Prerequisites
-- Docker Desktop with its Linux container engine running
-- .NET 10 SDK and Node.js 20 or later for local development and tests
-- 
-Configure environment
-From the repository root, copy the example files:
+The browser uses the Gateway for HTTP requests and connects to the Realtime service through the Gateway’s SignalR hub. Backend services use PostgreSQL for persistent data, Kafka for asynchronous events, and Redis for realtime infrastructure.
+
+## Backend Services
+
+**Identity Service** handles account registration, login, email verification, password recovery, profiles, and social features. It manages access and refresh tokens, friend requests, blocks, and user preferences.
+
+**Game Service** manages authoritative chess game state, legal moves, clocks, game history, PGN, chat, matchmaking, challenges, rematches, and player statistics. Game rules and results are validated by the backend.
+
+**Realtime Service** provides SignalR communication for live games and tournaments. It supports player and spectator rooms, move and chat broadcasts, game actions, and live connection updates.
+
+**Puzzle Service** provides puzzles, validates solution steps, records attempts, and returns player puzzle statistics and history.
+
+**Puzzle Importer** is a command-line utility for importing and validating compressed Lichess puzzle data into the Puzzle database.
+
+**Rating Service** provides player ratings, rating history, and leaderboards. It consumes game and puzzle events to update ratings asynchronously.
+
+**Analysis Service** evaluates chess positions using Stockfish. Its container installs the Linux Stockfish engine for server-side analysis.
+
+**Tournament Service** manages tournaments, registration, pairings, standings, match results, and game provisioning. It processes game completion events to update tournament progress.
+
+**API Gateway** is implemented with YARP. It provides the browser-facing HTTP entry point, routes requests to backend services, and configures authentication policies, CORS, and rate limiting.
+
+## Service Communication
+
+The Gateway routes frontend HTTP requests to the appropriate backend service. The frontend uses it for REST APIs and the `/hubs/game` SignalR endpoint.
+
+Services use direct HTTP calls when they need an immediate response, such as checking challenge eligibility or provisioning a tournament game.
+
+Apache Kafka supports asynchronous event flows. Game completion and puzzle attempt events can trigger updates in the Rating and Tournament services. Outbox workers help publish persisted events, while consumers process them independently of the original request.
+
+## Live Chess Gameplay
+
+The Game service is authoritative for game state and move validation. The frontend uses `chess.js` for client-side move hints and notation, but the backend validates submitted game actions.
+
+Players connect through SignalR to receive live game updates. Realtime broadcasts moves, chat messages, and game lifecycle events to the participants and, where allowed, spectators. Redis is configured as the SignalR backplane for realtime communication.
+
+## Frontend
+
+The frontend is a React and TypeScript single-page application built with Vite. It includes:
+
+- Account registration, login, email verification, and password recovery
+- Live game creation, matchmaking, and friend challenges
+- Game boards in 2D and 3D
+- Game history, moves, clocks, chat, and controls
+- Puzzle solving and puzzle history
+- Player profiles, ratings, and leaderboards
+- Tournament browsing and tournament details
+- Friends, settings, and spectator views
+
+The frontend is deployed independently from the backend. Its browser requests go to the public Gateway URL configured through `VITE_API_BASE_URL`.
+
+## Data Storage and Infrastructure
+
+PostgreSQL stores persistent data. The Docker Compose setup uses separate databases for Identity, Game, Puzzle, Rating, and Tournament.
+
+Redis supports realtime infrastructure, including SignalR scale-out. Apache Kafka provides event messaging between services.
+
+Docker Compose runs the backend APIs, Gateway, PostgreSQL, Kafka, and Redis. The frontend has its own Compose project and runs as a separate Nginx container.
+
+The supplied Compose configuration uses single instances of PostgreSQL, Kafka, and Redis. It is intended for local development and small single-host deployments, not a highly available production environment.
+
+## Authentication and Security
+
+The platform uses JWT authentication for protected API operations. Refresh tokens support ongoing sessions, while account security flows include email verification, password reset, password changes, and logout across sessions.
+
+Gateway CORS configuration controls which frontend origins can access the backend. Secrets and service credentials are supplied through environment configuration and should not be committed to the repository.
+
+## Technology Stack
+
+**Backend:** C#, .NET 10, ASP.NET Core, Entity Framework Core, YARP, SignalR  
+**Frontend:** React 19, TypeScript, Vite, Tailwind CSS, TanStack Router, TanStack Query, Three.js  
+**Data and messaging:** PostgreSQL, Redis, Apache Kafka  
+**Chess analysis:** Stockfish  
+**Containers and automation:** Docker, Docker Compose, Playwright
+
+## Running Locally
+
+Create local environment files from the provided examples and replace backend placeholder credentials with private values:
+
+```powershell
 Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env
+```
 
-Edit backend/.env and replace the example values with private credentials and secure random secrets. Do not commit .env files. The frontend’s VITE_API_BASE_URL is public build-time configuration and should point to a URL the user’s browser can reach.
+Start the backend from its directory:
 
-Start the backend
+```powershell
 Set-Location backend
 docker compose up --build -d
-docker compose ps
-The Gateway is available at http://localhost:5272 by default.
+```
 
-Start the frontend
-In a second PowerShell window:
+Start the frontend separately:
+
+```powershell
 Set-Location frontend
 docker compose up --build -d
-docker compose ps
-Open http://localhost:3000. The frontend and backend use separate Compose projects; the browser connects to the Gateway URL configured in the frontend environment.
+```
 
-To stop each Compose project, run docker compose down from its directory. This keeps persisted data. To also delete backend database and broker volumes, run docker compose down --volumes from backend/.
+By default, the frontend is available at `http://localhost:3000` and the API Gateway at `http://localhost:5272`.
 
-For local .NET process startup and additional infrastructure details, see [`backend/DOCKER.md`](backend/DOCKER.md).
+See `backend/DOCKER.md`, `frontend/README.md`, and `automation/playwright/README.md` for additional configuration and testing instructions.
 
-Testing
-Run backend tests from backend/:
-dotnet test .\Backend.sln
-Some integration and end-to-end scenarios require running services, dedicated test accounts, or seeded data.
+## Testing
 
-Playwright automation is isolated under automation/playwright/:
-Set-Location automation/playwright
-npm ci
-npx playwright install chromium
-Copy-Item .env.example .env
-npm run test:e2e
+Backend unit and integration tests are organized under `backend/tests/`. Browser and end-to-end automation is isolated under `automation/playwright/`.
 
-Configure dedicated test users and any required puzzle or tournament fixtures in the local Playwright .env. Use a test environment because end-to-end workflows can create game and tournament records. See [`automation/playwright/README.md`](automation/playwright/README.md) for headed mode, reports, and full-suite requirements.
+Playwright scenarios can exercise frontend behavior, API workflows, and live two-player SignalR games. Some scenarios require dedicated test accounts or seeded puzzle and tournament data. Use a test environment because end-to-end workflows can create game and tournament records.
 
-Deployment notes
-The supplied Docker Compose setup is intended for local development and small single-host deployments. PostgreSQL, Kafka, and Redis run as single instances; this configuration does not provide high availability.
+## Project Objective
 
-For a public deployment:
-- Use HTTPS and configure the frontend’s VITE_API_BASE_URL to the public Gateway URL.
-- Set FRONTEND_ORIGIN and FRONTEND_BASE_URL to the deployed frontend origin.
-- Forward WebSocket traffic for /hubs/game.
-- Store secrets in the host’s secret manager or environment configuration.
-- Use persistent storage and backups for databases and broker data.
-- Do not expose internal database or broker ports publicly.
-Database migrations run on service startup by default in the supplied backend Compose configuration. For production releases, review migrations and consider applying them as a separate deployment step.
-Repository layout
-backend/                 .NET solution, services, Docker Compose, and scripts
-frontend/                React application and standalone frontend container
-automation/playwright/   Isolated browser end-to-end automation
+ChessPlatform demonstrates practical experience building a full-stack distributed application. The project focuses on microservices, chess domain logic, realtime gameplay, event-driven communication, authentication, database boundaries, containerized infrastructure, and automated testing.
 
-License
-No license has been selected yet. Until a license is added, the project remains under default copyright terms; public availability does not grant permission to reuse it.
+## Author
+
+Mahdi Haidar
+
+## Repository
+
+[Online Chess Platform on GitHub](https://github.com/haidarmahdi099/Online-Chess-Platform)
+
+## License
+
+No license has been selected for this repository. Until a license is added, the project remains under default copyright terms; public availability does not grant permission to reuse it.

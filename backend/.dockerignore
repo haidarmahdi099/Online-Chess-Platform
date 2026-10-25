@@ -1,0 +1,9 @@
+.env
+.env.*
+**/bin/
+**/obj/
+tests/
+tools/stockfish/
+.git
+.vs/
+*.user

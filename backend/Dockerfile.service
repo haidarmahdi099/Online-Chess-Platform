@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1.7
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG PROJECT_PATH
+WORKDIR /src
+
+COPY . .
+RUN --mount=type=cache,id=chessplatform-nuget,target=/root/.nuget/packages,sharing=locked \
+    dotnet restore "$PROJECT_PATH" -p:NuGetAudit=false
+RUN --mount=type=cache,id=chessplatform-nuget,target=/root/.nuget/packages,sharing=locked \
+    dotnet publish "$PROJECT_PATH" --configuration Release --output /app/publish --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/publish .
+
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+ENTRYPOINT ["dotnet"]

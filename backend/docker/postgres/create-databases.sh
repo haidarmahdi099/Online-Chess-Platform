@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+for database in \
+  "${IDENTITY_DATABASE_NAME:?Set IDENTITY_DATABASE_NAME}" \
+  "${GAME_DATABASE_NAME:?Set GAME_DATABASE_NAME}" \
+  "${PUZZLE_DATABASE_NAME:?Set PUZZLE_DATABASE_NAME}" \
+  "${RATING_DATABASE_NAME:?Set RATING_DATABASE_NAME}" \
+  "${TOURNAMENT_DATABASE_NAME:?Set TOURNAMENT_DATABASE_NAME}"; do
+  createdb --username "$POSTGRES_USER" --owner "$POSTGRES_USER" "$database"
+done

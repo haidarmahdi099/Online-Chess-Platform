@@ -1,0 +1,323 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant light (&:is(.light *));
+
+/*
+ * ECHELON chess — design system.
+ * Dark premium default, optional light theme via .light on <html>.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --font-display: "Chakra Petch", ui-sans-serif, system-ui;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-live: var(--live);
+  --color-live-foreground: var(--live-foreground);
+  --color-board-light: var(--board-light);
+  --color-board-dark: var(--board-dark);
+  --color-violet: var(--violet);
+  --color-teal: var(--teal);
+  --color-rose: var(--rose);
+  --color-gold: var(--gold);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: oklch(0.16 0.024 264);
+  --foreground: oklch(0.96 0.005 250);
+  --card: oklch(0.2 0.024 264);
+  --card-foreground: oklch(0.96 0.005 250);
+  --popover: oklch(0.19 0.024 264);
+  --popover-foreground: oklch(0.96 0.005 250);
+  --primary: oklch(0.69 0.196 41);
+  --primary-foreground: oklch(0.16 0.024 264);
+  --secondary: oklch(0.26 0.026 264);
+  --secondary-foreground: oklch(0.94 0.005 250);
+  --muted: oklch(0.25 0.023 264);
+  --muted-foreground: oklch(0.68 0.018 258);
+  --accent: oklch(0.62 0.13 230);
+  --accent-foreground: oklch(0.98 0.005 250);
+  --destructive: oklch(0.58 0.22 22);
+  --destructive-foreground: oklch(0.98 0.005 250);
+  --border: oklch(0.3 0.024 264);
+  --input: oklch(0.3 0.024 264);
+  --ring: oklch(0.69 0.196 41);
+  --surface: oklch(0.19 0.024 264);
+  --surface-2: oklch(0.23 0.024 264);
+  --live: oklch(0.77 0.2 150);
+  --live-foreground: oklch(0.18 0.05 150);
+  --violet: oklch(0.68 0.2 295);
+  --teal: oklch(0.78 0.13 190);
+  --rose: oklch(0.7 0.21 5);
+  --gold: oklch(0.83 0.15 85);
+  --board-light: oklch(0.87 0.014 90);
+  --board-dark: oklch(0.31 0.026 264);
+  --chart-1: oklch(0.69 0.196 41);
+  --chart-2: oklch(0.62 0.13 230);
+  --chart-3: oklch(0.77 0.2 150);
+  --chart-4: oklch(0.7 0.14 300);
+  --chart-5: oklch(0.8 0.15 90);
+  --sidebar: oklch(0.18 0.024 264);
+  --sidebar-foreground: oklch(0.94 0.005 250);
+  --sidebar-primary: oklch(0.69 0.196 41);
+  --sidebar-primary-foreground: oklch(0.16 0.024 264);
+  --sidebar-accent: oklch(0.24 0.024 264);
+  --sidebar-accent-foreground: oklch(0.94 0.005 250);
+  --sidebar-border: oklch(0.3 0.024 264);
+  --sidebar-ring: oklch(0.69 0.196 41);
+
+  --gradient-hero:
+    radial-gradient(
+      120% 90% at 70% 10%,
+      color-mix(in oklab, var(--violet) 26%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      90% 80% at 10% 90%,
+      color-mix(in oklab, var(--primary) 20%, transparent),
+      transparent 65%
+    ),
+    radial-gradient(
+      70% 60% at 95% 85%,
+      color-mix(in oklab, var(--teal) 16%, transparent),
+      transparent 70%
+    );
+  --shadow-panel: 0 24px 60px -30px oklch(0 0 0 / 0.9);
+  --shadow-glow: 0 0 40px -8px color-mix(in oklab, var(--primary) 55%, transparent);
+}
+
+.light {
+  --background: oklch(0.97 0.006 250);
+  --foreground: oklch(0.2 0.025 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.025 264);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.025 264);
+  --primary: oklch(0.6 0.19 41);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.93 0.008 250);
+  --secondary-foreground: oklch(0.25 0.025 264);
+  --muted: oklch(0.94 0.008 250);
+  --muted-foreground: oklch(0.48 0.018 258);
+  --accent: oklch(0.54 0.13 230);
+  --accent-foreground: oklch(0.99 0 0);
+  --border: oklch(0.88 0.01 250);
+  --input: oklch(0.88 0.01 250);
+  --surface: oklch(0.99 0.003 250);
+  --surface-2: oklch(0.95 0.007 250);
+  --live: oklch(0.62 0.18 150);
+  --live-foreground: oklch(0.99 0 0);
+  --violet: oklch(0.56 0.21 295);
+  --teal: oklch(0.58 0.11 190);
+  --rose: oklch(0.6 0.22 5);
+  --gold: oklch(0.66 0.14 80);
+  --board-light: oklch(0.93 0.014 90);
+  --board-dark: oklch(0.55 0.04 250);
+  --sidebar: oklch(0.99 0.003 250);
+  --sidebar-foreground: oklch(0.2 0.025 264);
+  --sidebar-accent: oklch(0.94 0.008 250);
+  --sidebar-accent-foreground: oklch(0.2 0.025 264);
+  --sidebar-border: oklch(0.88 0.01 250);
+  --shadow-panel: 0 24px 60px -34px oklch(0.3 0.03 264 / 0.35);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Nothing may ever push the page sideways, whatever a child does. */
+  body {
+    overflow-x: clip;
+    min-width: 320px;
+    /* No pull-to-refresh or rubber-banding while playing; keeps notched phones' sides clear in landscape. */
+    overscroll-behavior-y: none;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* No 300ms tap delay or double-tap zoom on controls (keeps the board responsive on phones). */
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+}
+
+@utility panel {
+  background: color-mix(in oklab, var(--card) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(12px);
+}
+
+@utility label-mono {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility hero-bg {
+  background-image: var(--gradient-hero);
+}
+
+@utility glow {
+  box-shadow: var(--shadow-glow);
+}
+
+/* ---------- Colour & motion utilities ---------- */
+
+@utility text-gradient {
+  background-image: linear-gradient(
+    100deg,
+    var(--primary) 0%,
+    var(--rose) 45%,
+    var(--violet) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Slow drifting colour behind the hero. Pure CSS, transform/opacity only. */
+@utility aurora {
+  position: absolute;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 40% at 25% 30%, color-mix(in oklab, var(--violet) 35%, transparent), transparent 70%),
+    radial-gradient(35% 35% at 75% 25%, color-mix(in oklab, var(--primary) 30%, transparent), transparent 70%),
+    radial-gradient(40% 40% at 60% 80%, color-mix(in oklab, var(--teal) 25%, transparent), transparent 70%);
+  filter: blur(40px);
+  animation: aurora-drift 22s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* Cards that react to hover without layout shift. */
+@utility lift {
+  transition:
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 220ms,
+    box-shadow 220ms;
+  @media (hover: hover) {
+    &:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-panel), var(--shadow-glow);
+    }
+  }
+  &:active {
+    transform: translateY(-1px) scale(0.99);
+  }
+}
+
+@utility shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in oklab, var(--foreground) 9%, transparent) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Respect safe areas on notched phones. */
+@utility pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(-4%, -3%, 0) rotate(0deg) scale(1);
+  }
+  to {
+    transform: translate3d(5%, 4%, 0) rotate(8deg) scale(1.12);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Motion for React already honours this via <MotionConfig reducedMotion="user">; this
+   covers every CSS animation and transition as well. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

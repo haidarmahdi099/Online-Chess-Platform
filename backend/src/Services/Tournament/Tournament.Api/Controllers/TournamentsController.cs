@@ -1,0 +1,256 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using Tournament.Application.DTOs;
+using Tournament.Application.Interfaces;
+using Tournament.Application.Services;
+using Tournament.Domain.Enums;
+using Tournament.Domain.Entities;
+using Tournament.Application.Pagination;
+
+namespace Tournament.Api.Controllers;
+
+[ApiController]
+[Route("tournaments")]
+public sealed class TournamentsController(ITournamentService tournamentService, IConfiguration configuration) : ControllerBase
+{
+    [HttpGet, AllowAnonymous]
+    public async Task<IActionResult> GetTournaments([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] TournamentStatus? status = null, CancellationToken cancellationToken = default)
+    {
+        if (!TournamentPageWindow.TryGetOffset(page, pageSize, out _)) return BadRequest(new { message = "Invalid pagination." });
+        return Ok(await tournamentService.GetTournamentsAsync(page, pageSize, status, cancellationToken));
+    }
+
+    [HttpGet("{id:guid}"), AllowAnonymous]
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct) => (await tournamentService.GetByIdAsync(id, ct)) is { } t ? Ok(t) : NotFound();
+
+    [HttpGet("{id:guid}/standings"), AllowAnonymous]
+    public async Task<IActionResult> GetStandings(Guid id, CancellationToken ct) => (await tournamentService.GetStandingsAsync(id, ct)) is { } s ? Ok(s) : NotFound();
+
+    [HttpPost, Authorize]
+    public async Task<IActionResult> Create([FromBody] CreateTournamentRequest request, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var creatorId)) return Unauthorized();
+        // Creating tournaments is staff-only by default; set Tournaments:CreationRequiresAdmin=false to open it to every user.
+        if (configuration.GetValue("Tournaments:CreationRequiresAdmin", true) && !IsAdmin())
+            return Forbid();
+        try { var created = await tournamentService.CreateAsync(request, creatorId, ct); return CreatedAtAction(nameof(GetById), new { id = created.Id }, created); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpPost("{id:guid}/join"), Authorize]
+    public async Task<IActionResult> Join(Guid id, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var result = await tournamentService.JoinAsync(id, userId, ct);
+        if (result is null) return NotFound();
+        return result.Joined ? Ok(result) : Conflict(result);
+    }
+
+    [HttpDelete("{id:guid}/leave"), Authorize]
+    public async Task<IActionResult> Leave(Guid id, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var ok = await tournamentService.LeaveAsync(id, userId, ct);
+        return ok ? NoContent() : Conflict(new { message = "Tournament not found, registration closed, or you are not registered." });
+    }
+
+    [HttpPost("{id:guid}/cancel"), Authorize]
+    public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
+    {
+        if (!await CanManage(id, ct)) return Forbid();
+        var cancelled = await tournamentService.CancelAsync(id, ct); return cancelled ? NoContent() : Conflict(new { message = "Only an upcoming tournament before its start time can be cancelled." });
+    }
+
+    /// <summary>
+    /// Starts the tournament and creates round 1 in one transaction, then creates the live
+    /// games. Tournaments also start automatically once their start time arrives.
+    /// </summary>
+    [HttpPost("{id:guid}/start"), Authorize]
+    public async Task<IActionResult> Start(Guid id, CancellationToken ct)
+    {
+        if (!await CanManage(id, ct)) return Forbid();
+        return await tournamentService.StartAsync(id, ct) switch
+        {
+            StartTournamentOutcome.Started => await StartedResponse(id, ct),
+            StartTournamentOutcome.NotFound => NotFound(),
+            StartTournamentOutcome.TooEarly => Conflict(new { message = "The tournament start time has not arrived yet." }),
+            StartTournamentOutcome.NotEnoughPlayers => Conflict(new { message = "At least two participants are required." }),
+            _ => Conflict(new { message = "Only an upcoming tournament can be started." })
+        };
+    }
+
+    [HttpPost("{id:guid}/complete"), Authorize]
+    public async Task<IActionResult> Complete(Guid id, CancellationToken ct)
+    {
+        if (!await CanManage(id, ct)) return Forbid();
+        return await tournamentService.CompleteAsync(id, ct) switch
+        {
+            CompleteTournamentOutcome.Completed => await CompletedResponse(id, ct),
+            CompleteTournamentOutcome.NotFound => NotFound(),
+            CompleteTournamentOutcome.NotReady => Conflict(new { message = "All rounds and matches must be settled before completing the tournament." }),
+            _ => Conflict(new { message = "Only an in-progress tournament can be completed." })
+        };
+    }
+
+    /// <summary>
+    /// Safe to call at any time and as often as needed. Pairs the next round once the current
+    /// round is finished (or completes the tournament after the last round) and retries any
+    /// game that has not been created yet. Rounds also advance automatically.
+    /// </summary>
+    [HttpPost("{id:guid}/pairings"), Authorize]
+    public async Task<IActionResult> Pairings(Guid id, CancellationToken ct)
+    {
+        if (!await CanManage(id, ct)) return Forbid();
+        return await tournamentService.AdvanceAsync(id, ct) switch
+        {
+            RoundAdvanceOutcome.NotFound => NotFound(),
+            RoundAdvanceOutcome.InvalidState => Conflict(new { message = "Pairings can only be generated for an in-progress tournament." }),
+            _ => await PairingsResponse(id, ct)
+        };
+    }
+
+    /// <summary>Puts matches whose game creation was rejected back in the queue and retries them.</summary>
+    [HttpPost("{id:guid}/provisioning/retry"), Authorize]
+    public async Task<IActionResult> RetryProvisioning(Guid id, CancellationToken ct)
+    {
+        if (!await CanManage(id, ct)) return Forbid();
+        await tournamentService.RetryFailedProvisionsAsync(id, ct);
+        return await RespondWithDetails(id, ct);
+    }
+
+    /// <summary>Owner/admin override for a match that cannot finish (for example a game that could not be created).</summary>
+    [HttpPut("{id:guid}/matches/{matchId:guid}/result"), Authorize]
+    public async Task<IActionResult> SetMatchResult(Guid id, Guid matchId, [FromBody] SetMatchResultRequest request, CancellationToken ct)
+    {
+        if (!await CanManage(id, ct)) return Forbid();
+        if (request is null || !MatchResults.IsPlayableResult(request.Result))
+            return BadRequest(new { message = "Result must be WhiteWin, BlackWin or Draw." });
+
+        var outcome = await tournamentService.ForceMatchResultAsync(id, matchId, request.Result, ct);
+        return outcome.Status switch
+        {
+            MatchResultStatus.Recorded => await MatchResultResponse(id, matchId, request.Result, ct),
+            MatchResultStatus.MatchNotFound => NotFound(),
+            MatchResultStatus.AlreadyRecorded => Conflict(new { message = "This match already has a result." }),
+            _ => Conflict(new { message = "The tournament must be in progress and the match must be a played game." })
+        };
+    }
+
+    // Participant-facing projections avoid forcing clients to unpack the full tournament DTO.
+    [HttpGet("{id:guid}/participants"), AllowAnonymous]
+    public async Task<IActionResult> GetParticipants(Guid id, CancellationToken ct)
+    {
+        var tournament = await tournamentService.GetByIdAsync(id, ct);
+        return tournament is null ? NotFound() : Ok(new
+        {
+            tournamentId = tournament.Id,
+            participantCount = tournament.ParticipantIds.Count,
+            participants = tournament.ParticipantIds
+        });
+    }
+
+    [HttpGet("{id:guid}/matches"), AllowAnonymous]
+    public async Task<IActionResult> GetMatches(Guid id, CancellationToken ct)
+    {
+        var tournament = await tournamentService.GetByIdAsync(id, ct);
+        return tournament is null ? NotFound() : Ok(new
+        {
+            tournamentId = tournament.Id,
+            currentRound = tournament.CurrentRound,
+            matches = tournament.Matches
+        });
+    }
+
+    [HttpGet("{id:guid}/rounds"), AllowAnonymous]
+    public async Task<IActionResult> GetRounds(Guid id, CancellationToken ct)
+    {
+        var tournament = await tournamentService.GetByIdAsync(id, ct);
+        if (tournament is null) return NotFound();
+        var rounds = tournament.Matches
+            .GroupBy(match => match.RoundNumber)
+            .OrderBy(group => group.Key)
+            .Select(group => new { roundNumber = group.Key, matches = group.ToArray() })
+            .ToArray();
+        return Ok(new
+        {
+            tournamentId = tournament.Id,
+            currentRound = tournament.CurrentRound,
+            totalRounds = tournament.TotalRounds,
+            rounds
+        });
+    }
+
+    [HttpGet("{id:guid}/results"), AllowAnonymous]
+    public async Task<IActionResult> GetResults(Guid id, CancellationToken ct)
+    {
+        var tournament = await tournamentService.GetByIdAsync(id, ct);
+        return tournament is null ? NotFound() : Ok(new
+        {
+            tournamentId = tournament.Id,
+            status = tournament.Status,
+            results = tournament.Matches.Where(match => !string.IsNullOrWhiteSpace(match.Result)).ToArray()
+        });
+    }
+
+    [HttpGet("{id:guid}/me"), Authorize]
+    public async Task<IActionResult> GetMyTournamentStatus(Guid id, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var tournament = await tournamentService.GetByIdAsync(id, ct);
+        if (tournament is null) return NotFound();
+        return Ok(new
+        {
+            tournamentId = tournament.Id,
+            userId,
+            isRegistered = tournament.ParticipantIds.Contains(userId),
+            isOwner = tournament.CreatedByUserId == userId,
+            status = tournament.Status,
+            currentRound = tournament.CurrentRound
+        });
+    }
+
+    private async Task<IActionResult> PairingsResponse(Guid id, CancellationToken ct)
+    {
+        var details = await tournamentService.GetByIdAsync(id, ct);
+        return details is null ? NotFound() : Ok(details);
+    }
+    private async Task<IActionResult> MatchResultResponse(Guid id, Guid matchId, string result, CancellationToken ct)
+    {
+        var details = await tournamentService.GetByIdAsync(id, ct);
+        return details is null ? NotFound() : Ok(details);
+    }
+
+    private async Task<IActionResult> StartedResponse(Guid id, CancellationToken ct)
+    {
+        var details = await tournamentService.GetByIdAsync(id, ct);
+        return details is null ? NotFound() : Ok(details);
+    }
+    private async Task<IActionResult> CompletedResponse(Guid id, CancellationToken ct)
+    {
+        return NoContent();
+    }
+
+    private async Task<IActionResult> RespondWithDetails(Guid id, CancellationToken ct) =>
+        await tournamentService.GetByIdAsync(id, ct) is { } details ? Ok(details) : NotFound();
+
+    private async Task<bool> CanManage(Guid id, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return false;
+        if (IsAdmin()) return true;
+        return await tournamentService.CanManageAsync(id, userId, ct);
+    }
+
+    // The Identity service puts the role in the token as ClaimTypes.Role. Depending on
+    // inbound claim mapping it arrives as that URI or as the short "role" claim.
+    private bool IsAdmin() =>
+        User.IsInRole("Admin") ||
+        User.FindAll(ClaimTypes.Role).Any(c => c.Value == "Admin") ||
+        User.FindAll("role").Any(c => c.Value == "Admin");
+
+    private bool TryGetUserId(out Guid userId)
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        return Guid.TryParse(value, out userId) && userId != Guid.Empty;
+    }
+}

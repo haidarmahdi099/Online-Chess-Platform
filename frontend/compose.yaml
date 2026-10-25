@@ -1,0 +1,16 @@
+name: chessplatform-frontend
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # This URL is used by the browser, so point it at the host-published Gateway.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:5272}
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${FRONTEND_PORT:-3000}:8080"

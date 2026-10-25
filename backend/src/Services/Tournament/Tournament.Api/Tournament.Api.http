@@ -1,0 +1,65 @@
+@Tournament.Api_HostAddress = http://localhost:5104
+@accessToken = replace-with-access-token
+@tournamentId = replace-with-tournament-guid
+
+### List tournaments
+GET {{Tournament.Api_HostAddress}}/tournaments?page=1&pageSize=20
+Accept: application/json
+
+### Create tournament (startsAtUtc must be in the future and end with Z)
+POST {{Tournament.Api_HostAddress}}/tournaments
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Local Test Tournament",
+  "description": "Temporary tournament for API testing",
+  "startsAtUtc": "2030-01-01T12:00:00Z",
+  "initialTimeSeconds": 180,
+  "incrementSeconds": 2,
+  "maxParticipants": 8
+}
+
+### Tournament details, participants, and matches
+GET {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}
+Accept: application/json
+
+### Join
+POST {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/join
+Authorization: Bearer {{accessToken}}
+
+### Leave before the tournament starts
+DELETE {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/leave
+Authorization: Bearer {{accessToken}}
+
+### Cancel before the tournament starts
+POST {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/cancel
+Authorization: Bearer {{accessToken}}
+
+### Start (only after StartsAtUtc)
+POST {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/start
+Authorization: Bearer {{accessToken}}
+
+### Advance: pair the next round (or complete after the last round) and retry pending game creation.
+### Safe to call repeatedly. Rounds also advance automatically when the last game of a round ends.
+POST {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/pairings
+Authorization: Bearer {{accessToken}}
+
+### Standings (points, Buchholz, W/D/L, byes)
+GET {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/standings
+Accept: application/json
+
+### Re-queue matches whose game creation was rejected and retry them
+POST {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/provisioning/retry
+Authorization: Bearer {{accessToken}}
+
+### Owner/admin override for a stuck match (WhiteWin, BlackWin or Draw)
+PUT {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/matches/replace-with-match-guid/result
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "result": "Draw" }
+
+### Complete tournament (owner/admin operation)
+POST {{Tournament.Api_HostAddress}}/tournaments/{{tournamentId}}/complete
+Authorization: Bearer {{accessToken}}

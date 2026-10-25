@@ -1,0 +1,264 @@
+name: chessplatform-backend
+
+x-dotnet-environment: &dotnet-environment
+  ASPNETCORE_ENVIRONMENT: Production
+  ASPNETCORE_URLS: http://+:8080
+  Jwt__SecretKey: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in backend/.env}
+  Jwt__Issuer: ${JWT_ISSUER:-ChessPlatform.Identity}
+  Jwt__Audience: ${JWT_AUDIENCE:-ChessPlatform}
+
+x-dotnet-service: &dotnet-service
+  restart: unless-stopped
+  init: true
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in backend/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend/.env}
+      POSTGRES_DB: postgres
+      IDENTITY_DATABASE_NAME: ${IDENTITY_DATABASE_NAME:?Set IDENTITY_DATABASE_NAME in backend/.env}
+      GAME_DATABASE_NAME: ${GAME_DATABASE_NAME:?Set GAME_DATABASE_NAME in backend/.env}
+      PUZZLE_DATABASE_NAME: ${PUZZLE_DATABASE_NAME:?Set PUZZLE_DATABASE_NAME in backend/.env}
+      RATING_DATABASE_NAME: ${RATING_DATABASE_NAME:?Set RATING_DATABASE_NAME in backend/.env}
+      TOURNAMENT_DATABASE_NAME: ${TOURNAMENT_DATABASE_NAME:?Set TOURNAMENT_DATABASE_NAME in backend/.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/create-databases.sh:/docker-entrypoint-initdb.d/10-create-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  kafka:
+    image: apache/kafka:4.1.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  kafka-topics-init:
+    image: apache/kafka:4.1.0
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for topic in game.finished game.aborted game.matched tournament.events puzzle.attempted rating.deadletter; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$topic" --partitions 3 --replication-factor 1
+        done
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+
+  identity-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        PROJECT_PATH: src/Services/Identity/Identity.Api/Identity.Api.csproj
+    command: ["Identity.Api.dll"]
+    environment:
+      <<: *dotnet-environment
+      ConnectionStrings__IdentityDatabase: "Host=postgres;Port=5432;Database=${IDENTITY_DATABASE_NAME};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Database__MigrateOnStartup: ${DATABASE_MIGRATE_ON_STARTUP:-true}
+      Frontend__BaseUrl: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      Brevo__ApiKey: ${BREVO_API_KEY:?Set BREVO_API_KEY in backend/.env}
+      Brevo__SenderEmail: ${BREVO_SENDER_EMAIL:?Set BREVO_SENDER_EMAIL in backend/.env}
+      InternalServices__ServiceKey: ${INTERNAL_TOURNAMENT_KEY:?Set INTERNAL_TOURNAMENT_KEY in backend/.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  game-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        PROJECT_PATH: src/Services/Game/Game.Api/Game.Api.csproj
+    command: ["Game.Api.dll"]
+    environment:
+      <<: *dotnet-environment
+      ConnectionStrings__GameDatabase: "Host=postgres;Port=5432;Database=${GAME_DATABASE_NAME};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Database__MigrateOnStartup: ${DATABASE_MIGRATE_ON_STARTUP:-true}
+      InternalServices__TournamentKey: ${INTERNAL_TOURNAMENT_KEY:?Set INTERNAL_TOURNAMENT_KEY in backend/.env}
+      Kafka__BootstrapServers: kafka:9092
+      IdentityApi__BaseUrl: http://identity-api:8080/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_completed_successfully
+      identity-api:
+        condition: service_started
+
+  realtime-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        PROJECT_PATH: src/Services/Realtime/Realtime/Realtime.csproj
+    command: ["Realtime.dll"]
+    environment:
+      <<: *dotnet-environment
+      Kafka__BootstrapServers: kafka:9092
+      GameService__BaseUrl: http://game-api:8080/
+      SignalR__Redis__ConnectionString: redis:6379
+      SignalR__Redis__ChannelPrefix: ${SIGNALR_REDIS_CHANNEL_PREFIX:-ChessPlatform}
+      SignalR__Redis__RequiredForMultiInstance: "true"
+    depends_on:
+      kafka:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      game-api:
+        condition: service_started
+
+  puzzle-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        PROJECT_PATH: src/Services/Puzzle/Puzzle.Api/Puzzle.Api.csproj
+    command: ["Puzzle.Api.dll"]
+    environment:
+      <<: *dotnet-environment
+      ConnectionStrings__PuzzleDatabase: "Host=postgres;Port=5432;Database=${PUZZLE_DATABASE_NAME};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Database__MigrateOnStartup: ${DATABASE_MIGRATE_ON_STARTUP:-true}
+      Kafka__BootstrapServers: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_completed_successfully
+
+  rating-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        PROJECT_PATH: src/Services/Rating/Rating.Api/Rating.Api.csproj
+    command: ["Rating.Api.dll"]
+    environment:
+      <<: *dotnet-environment
+      ConnectionStrings__RatingDatabase: "Host=postgres;Port=5432;Database=${RATING_DATABASE_NAME};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Database__MigrateOnStartup: ${DATABASE_MIGRATE_ON_STARTUP:-true}
+      Kafka__BootstrapServers: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_completed_successfully
+
+  analysis-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: src/Services/Analysis/Analysis.Api/Dockerfile
+    environment:
+      <<: *dotnet-environment
+    cpus: 2.0
+    mem_limit: 512m
+
+  tournament-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        PROJECT_PATH: src/Services/Tournament/Tournament.Api/Tournament.Api.csproj
+    command: ["Tournament.Api.dll"]
+    environment:
+      <<: *dotnet-environment
+      ConnectionStrings__TournamentDatabase: "Host=postgres;Port=5432;Database=${TOURNAMENT_DATABASE_NAME};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Database__MigrateOnStartup: ${DATABASE_MIGRATE_ON_STARTUP:-true}
+      InternalServices__TournamentKey: ${INTERNAL_TOURNAMENT_KEY:?Set INTERNAL_TOURNAMENT_KEY in backend/.env}
+      Kafka__BootstrapServers: kafka:9092
+      GameService__BaseUrl: http://game-api:8080/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_completed_successfully
+      game-api:
+        condition: service_started
+
+  gateway:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        PROJECT_PATH: src/Gateway/Gateway/Gateway.csproj
+    command: ["Gateway.dll"]
+    environment:
+      <<: *dotnet-environment
+      Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      ReverseProxy__Clusters__identity__Destinations__identity__Address: http://identity-api:8080/
+      ReverseProxy__Clusters__game__Destinations__game__Address: http://game-api:8080/
+      ReverseProxy__Clusters__realtime__Destinations__realtime__Address: http://realtime-api:8080/
+      ReverseProxy__Clusters__puzzle__Destinations__puzzle-api__Address: http://puzzle-api:8080/
+      ReverseProxy__Clusters__rating__Destinations__rating-api__Address: http://rating-api:8080/
+      ReverseProxy__Clusters__analysis__Destinations__analysis-api__Address: http://analysis-api:8080/
+      ReverseProxy__Clusters__tournament__Destinations__tournament-api__Address: http://tournament-api:8080/
+    ports:
+      - "${GATEWAY_PORT:-5272}:8080"
+    depends_on:
+      identity-api:
+        condition: service_started
+      game-api:
+        condition: service_started
+      realtime-api:
+        condition: service_started
+      puzzle-api:
+        condition: service_started
+      rating-api:
+        condition: service_started
+      analysis-api:
+        condition: service_started
+      tournament-api:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:

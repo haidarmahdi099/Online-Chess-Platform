@@ -1,0 +1,17 @@
+# .NET build outputs
+**/bin/
+**/obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+secrets/
+# Test outputs
+TestResults/
+coverage/
